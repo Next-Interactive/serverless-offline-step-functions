@@ -175,7 +175,7 @@ class StateMachineExecutor {
     buildWaitState(stateInfo, event) {
         let milliseconds = 0;
         // SecondsPath: specified using a path from the state's input data.
-        if ((stateInfo.Seconds && _.isNaN(+stateInfo.Seconds))) {
+        if ((stateInfo.Seconds && !_.isNaN(+stateInfo.Seconds))) {
             milliseconds = +stateInfo.Seconds
         } else if (stateInfo.SecondsPath && event.input) {
             milliseconds = +jsonPath({ json: event.input, path: stateInfo.SecondsPath })[0];
