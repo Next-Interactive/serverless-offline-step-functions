@@ -39,12 +39,12 @@ class ChoiceProcessor {
                 choiceComparator = 'Not';
                 choice = choice.Not;
             } else if (choice.And) {
-                if (this.evaluateAnd(choice.And) === true) {
+                if (this.evaluateAnd(choice.And, input)) {
                     nextState = choice.Next;
                     return false // short circuit forEach
                 }
             } else if (choice.Or) {
-                if (this.evaluateOr(choice.Or) === true) {
+                if (this.evaluateOr(choice.Or, input)) {
                     nextState = choice.Next;
                     return false // short circuit forEach
                 }
@@ -77,12 +77,12 @@ class ChoiceProcessor {
         throw new StateMachineError('No "next" state found - try adding a "Default" option');
     }
 
-    evaluateAnd(comparisons) {
+    evaluateAnd(choice, data) {
         let andResult = true;
         // choice will contain an array of choice rules
         _.forEach(choice, (item) => {
-            const comparator = this.getChoiceComparator(choice);
-            if (!this.processChoice(comparator, item, data)) {
+            const comparator = this.getChoiceComparator(item);
+            if (!this.evaluateChoice(comparator, item, data)) {
                 // since this is an AND, if any item is false, the statement will be false
                 andResult = false;
                 return false; // short circuit forEach
@@ -91,12 +91,12 @@ class ChoiceProcessor {
         return andResult;
     }
 
-    evaluateOr(comparisons) {
+    evaluateOr(choice, data) {
         let orResult = false;
         // choice will contain an array of choice rules
         _.forEach(choice, (item) => {
-            const comparator = this.getChoiceComparator(choice);
-            if (this.processChoice(comparator, item, data)) {
+            const comparator = this.getChoiceComparator(item);
+            if (this.evaluateChoice(comparator, item, data)) {
                 // since this is an OR, if any item is true, the statement will be true
                 orResult = true;
                 return false; // short circuit forEach
@@ -155,25 +155,24 @@ class ChoiceProcessor {
     }
 
     checkGT(choice, inputValue) {
-        return +inputValue > +choice.NumericGreaterThan;
+        return +inputValue > +choice;
     }
 
     checkGTE(choice, inputValue) {
-        return +inputValue >= +choice.NumericGreaterThan;
+        return +inputValue >= +choice;
     }
 
     checkLT(choice, inputValue) {
-        return +inputValue < +choice.NumericLessThan;
+        return +inputValue < +choice;
     }
 
     checkLTE(choice, inputValue) {
-        return +inputValue <= +choice.NumericLessThan;
+        return +inputValue <= +choice;
     }
 
     getChoiceComparator(choice) {
         const keys = Object.keys(choice);
-        choiceComparator = _.filter(keys, key => key !== 'Variable' && key !== 'Next');
-
+        const choiceComparator = _.filter(keys, key => key !== 'Variable' && key !== 'Next');
         if (choiceComparator.length > 1) {
             throw new Error('mulitple choice comparison keys found');
         }
