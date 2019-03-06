@@ -77,7 +77,7 @@ class ServerlessPlugin {
                     lambdaFn.events = Object.assign([], stateMachine.events);
 
                     // set the handler to the generic state machine handler function
-                    lambdaFn.handler = `${this.handlersDirectory}/state-machine-handler.run`;
+                    lambdaFn.startHandler = `${this.handlersDirectory}/state-machine-handler.run`;
                     _.forEach(lambdaFn.events, (event) => {
                         if (event.http) {
                             event.input = { stateName: stateMachine.definition.StartAt, stateMachine: stateMachineName };
@@ -127,6 +127,7 @@ class ServerlessPlugin {
    * @author serverless-step-functions
    */
   parseYaml() {
+    this.serverless.config.servicePath = this.serverless.config.servicePath.replace(".build", "");
     const servicePath = this.serverless.config.servicePath;
     if (!servicePath) {
         console.error(this.logPrefix, 'servicePath not found');
@@ -134,6 +135,7 @@ class ServerlessPlugin {
     }
 
     const serverlessYmlPath = path.join(servicePath, 'serverless.yml');
+
     return this.serverless.yamlParser
     .parse(serverlessYmlPath)
     .then(serverlessFileParam => {

@@ -141,8 +141,9 @@ class StateMachineExecutor {
                 const handlerSplit = stateInfo.handler.split('.');
                 // const cb = callback(null, { statusCode: 200, body: JSON.stringify({ startDate: sme.startDate, executionArn: sme.executionArn }) });
                 // const context = ;
-                let runner = `const context = require('./node_modules/serverless-offline/src/createLambdaContext')(require('./${handlerSplit[0]}').${handlerSplit[1]}, ${callback}); `;
-                runner += `require("./${handlerSplit[0]}").${handlerSplit[1]}(JSON.parse(process.env.input), context, ${callback})`;
+
+                let runner = `const context = require('./node_modules/serverless-offline/src/createLambdaContext')(require('./.build/${handlerSplit[0]}').${handlerSplit[1]}, ${callback}); `;
+                runner += `require("./.build/${handlerSplit[0]}").${handlerSplit[1]}(JSON.parse(process.env.input), context, ${callback})`;
                 runner += `.then((data) => { console.log(JSON.stringify({ "${outputKey}": data || {} })); process.exit(0); })`;
                 runner += `.catch((e) => { console.error("${logPrefix} handler error:",e); })`;
                 return runner;
@@ -174,7 +175,7 @@ class StateMachineExecutor {
     buildWaitState(stateInfo, event) {
         let milliseconds = 0;
         // SecondsPath: specified using a path from the state's input data.
-        if ((stateInfo.Seconds && _.isNaN(+stateInfo.Seconds))) {
+        if ((stateInfo.Seconds && !_.isNaN(+stateInfo.Seconds))) {
             milliseconds = +stateInfo.Seconds
         } else if (stateInfo.SecondsPath && event.input) {
             milliseconds = +jsonPath({ json: event.input, path: stateInfo.SecondsPath })[0];
