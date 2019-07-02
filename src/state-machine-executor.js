@@ -7,14 +7,19 @@ const choiceProcessor = require('./choice-processor');
 const stateTypes = require('./state-types');
 const StateRunTimeError = require('./state-machine-error');
 const createLambdaContext = require('../node_modules/serverless-offline/src/createLambdaContext');
+var objectPath = require("object-path");
 
 const logPrefix = '[Serverless Offline Step Functions]:';
 
 class StateMachineExecutor {
-    constructor(stateMachineName, stateName, stateMachineJSONInput) {
+    constructor(stateMachineName, stateName, stateMachineJSONInput, provider) {
         this.currentStateName = stateName;
         this.stateMachineName = stateMachineName;
         this.stateMachineJSON = {};
+        this.provider = provider;
+
+        console.log('-----------------------PROVIDER-----------------------')
+        console.log(this.provider)
         if (stateMachineJSONInput) {
             this.stateMachineJSON.stateMachines = _.assign({}, this.stateMachineJSON.stateMachines, stateMachineJSONInput);
         } else if (fs.existsSync('./state-machine.json')) {
@@ -35,12 +40,13 @@ class StateMachineExecutor {
      */
     spawnProcess(stateInfo, input, context, callback = null) {
         console.log(`* * * * * ${this.currentStateName} * * * * *`);
-        console.log('input: ', input);
         // This will be used as the parent node key for when the process
         // finishes and its output needs to be processed.
         const outputKey = `sf-${Date.now()}`;
-
-        this.processTaskInputPath(input, stateInfo);
+        
+        input = this.processTaskInputPath(input, stateInfo);
+        input = this.processTaskParameters(input, stateInfo);
+        console.log('input: ', input);
 
         const child = child_process.spawn('node',
         [
@@ -56,7 +62,6 @@ class StateMachineExecutor {
                 if (Buffer.isBuffer(data) &&
                 stateInfo.Type !== stateTypes.FAIL) {
                     data = data.toString().trim();
-
                     try {
                         // check that output is a JSON string
                         const parsed = JSON.parse(data);
@@ -142,7 +147,7 @@ class StateMachineExecutor {
                 // const cb = callback(null, { statusCode: 200, body: JSON.stringify({ startDate: sme.startDate, executionArn: sme.executionArn }) });
                 // const context = ;
 
-                let runner = `const context = require('./node_modules/serverless-offline/src/createLambdaContext')(require('./.build/${handlerSplit[0]}').${handlerSplit[1]}, ${callback}); `;
+                let runner = `const context = require('./node_modules/serverless-offline/src/createLambdaContext')(require('./.build/${handlerSplit[0]}').${handlerSplit[1]}, ${JSON.stringify(this.provider)},${callback}); `;
                 runner += `require("./.build/${handlerSplit[0]}").${handlerSplit[1]}(JSON.parse(process.env.input), context, ${callback})`;
                 runner += `.then((data) => { console.log(JSON.stringify({ "${outputKey}": data || {} })); process.exit(0); })`;
                 runner += `.catch((e) => { console.error("${logPrefix} handler error:",e); })`;
@@ -150,7 +155,11 @@ class StateMachineExecutor {
 
             // should pass input directly to output without doing work
             case 'Pass':
-                return '';
+                if (stateInfo.Result !== undefined) {
+                    return `console.log(JSON.stringify({ "${outputKey}": ${JSON.stringify(stateInfo.Result)} || {} })); process.exit(0);`;
+                }
+
+                return ''
             // Waits before moving on:
             // - Seconds, SecondsPath: wait the given number of seconds
             // - Timestamp, TimestampPath: wait until the given timestamp
@@ -209,6 +218,40 @@ class StateMachineExecutor {
                 input = Object.assign({}, data);
             }});
         }
+
+        return input
+    }
+
+    /**
+     * Process the state's Parameters - per AWS docs:
+     * https://docs.aws.amazon.com/step-functions/latest/dg/input-output-inputpath-params.html
+     * @param {*} input
+     * @param {*} stateInfo
+     */
+    processTaskParameters(input, stateInfo) {
+        if (typeof stateInfo.Parameters === 'undefined') {
+            return input
+        }
+
+        return this.handleParameters(input, stateInfo.Parameters)
+    }
+
+    handleParameters(input, params) {
+        let returnParam = {}
+        console.log(params)
+        Object.keys(params).forEach((key) => {
+            if (key.endsWith('.$')) {
+                returnParam[key.substr(0, key.length - 2)] = jsonPath({ json: input, path: params[key]})[0]
+            } else {
+                if (typeof params[key] === 'object') {
+                    returnParam[key] = this.handleParameters(input, params[key])
+                } else {
+                    returnParam[key] = params[key]
+                }
+            }
+        })
+
+        return returnParam
     }
 
     /**
@@ -227,16 +270,16 @@ class StateMachineExecutor {
         // If omitted, it has the value $ which designates the entire input.
         // For more information, see Input and Output Processing.
         // https://docs.aws.amazon.com/step-functions/latest/dg/amazon-states-language-common-fields.html
-        const path = typeof stateInfo.ResultPath === 'undefined' ? '$' : stateInfo.ResultPath;
-        const processed = jsonPath({ json: resultData, path: path });
-
-        if (typeof processed === 'undefined' || processed.length === 0) {
-            return this.endStateMachine(
-                new StateRunTimeError(`An error occurred while executing the state '${this.currentStateName}'. Invalid ResultPath '${path}': The ResultPath references an invalid value.`),
-                resultData);
+        if (typeof stateInfo.ResultPath === 'undefined' || stateInfo.ResultPath === '$') {
+            return resultData
         }
 
-        return processed[0];
+        const resultPathArray = jsonPath.toPathArray(stateInfo.ResultPath)
+        if (resultPathArray[0] === '$' && resultPathArray.length > 1) {resultPathArray.shift();}
+
+        objectPath.set(input, resultPathArray, resultData)
+
+        return input
     }
 
     /**

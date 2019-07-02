@@ -26,9 +26,10 @@ module.exports = (serverless) => {
             let startDate = null;
             let exeArn = '';
             _.forEach(serverless.service.stepFunctions.stateMachines, (machine, machineKey) => {
+
                 if (machine.name === machineName) {
                     const currentState = machine.definition.States[machine.definition.StartAt];
-                    const sme = new StateMachineExecutor(machineKey, machine.definition.StartAt, { [machineKey]: machine });
+                    const sme = new StateMachineExecutor(machineKey, machine.definition.StartAt, { [machineKey]: machine }, serverless.service.provider);
 
                     // TODO: check integration type to set input properly (i.e. lambda vs. sns)
                     sme.spawnProcess(currentState, JSON.parse(data.input), {}, () => true);
@@ -37,14 +38,12 @@ module.exports = (serverless) => {
                 }
             });
             // per docs, step execution response includes the start date and execution arn
-            res.end(null, {
-                statusCode: 200,
-                body: JSON.stringify(
-                    {
-                        startDate: startDate,
-                        executionArn: exeArn,
-                    }),
-            });
+            res.writeHead(200, {'Content-Type': 'application/json'});
+
+            res.end(JSON.stringify({
+                startDate: startDate,
+                executionArn: exeArn,
+            }));
         });
     }).listen(port, () => {
         log(`Running at http://127.0.0.1:${port}`);

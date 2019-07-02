@@ -43,6 +43,7 @@ class ServerlessPlugin {
     // object key in the service's custom data for config values
     const SERVERLESS_OFFLINE_STEP_FUNCTIONS = 'serverless-offline-step-functions';
     const functions = this.serverless.service.functions;
+    
     _.forEach(this.serverless.service.stepFunctions.stateMachines, (stateMachine, stateMachineName) => {
         _.forEach(stateMachine.definition.States, (state, stateName) => {
             if (state.Type === stateTypes.TASK) {
