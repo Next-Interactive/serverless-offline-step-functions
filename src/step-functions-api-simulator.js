@@ -3,6 +3,7 @@ const http = require('http');
 const chalk = require('chalk');
 const _ = require('lodash');
 const StateMachineExecutor = require('./state-machine-executor');
+const callback = require('./callback')
 
 module.exports = (serverless) => {
     const port = serverless.service.custom['serverless-offline-step-functions'].port || 8014;
@@ -32,7 +33,7 @@ module.exports = (serverless) => {
                     const sme = new StateMachineExecutor(machineKey, machine.definition.StartAt, { [machineKey]: machine }, serverless.service.provider);
 
                     // TODO: check integration type to set input properly (i.e. lambda vs. sns)
-                    sme.spawnProcess(currentState, JSON.parse(data.input), {}, () => true);
+                    sme.spawnProcess(currentState, JSON.parse(data.input), {}, callback);
                     startDate = sme.startDate;
                     exeArn = sme.executionArn;
                 }

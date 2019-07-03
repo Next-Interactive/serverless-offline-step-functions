@@ -1,4 +1,3 @@
-const Promise = require('bluebird');
 const child_process = require('child_process');
 const _ = require('lodash');
 const fs = require('fs');
@@ -6,7 +5,6 @@ const jsonPath = require('JSONPath');
 const choiceProcessor = require('./choice-processor');
 const stateTypes = require('./state-types');
 const StateRunTimeError = require('./state-machine-error');
-const createLambdaContext = require('../node_modules/serverless-offline/src/createLambdaContext');
 var objectPath = require("object-path");
 
 const logPrefix = '[Serverless Offline Step Functions]:';
@@ -106,7 +104,7 @@ class StateMachineExecutor {
                 this.currentStateName = stateInfo.Next;
                 stateInfo = this.stateMachineJSON.stateMachines[this.stateMachineName].definition.States[stateInfo.Next];
                 console.log('output: ', output);
-                this.spawnProcess(stateInfo, output, context);
+                this.spawnProcess(stateInfo, output, context, callback);
             });
     }
 
