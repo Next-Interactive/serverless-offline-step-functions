@@ -38,6 +38,8 @@ class StateMachineExecutor {
      */
     spawnProcess(stateInfo, input, context, callback = null) {
         console.log(`* * * * * ${this.currentStateName} * * * * *`);
+        let globalInput = input
+
         // This will be used as the parent node key for when the process
         // finishes and its output needs to be processed.
         const outputKey = `sf-${Date.now()}`;
@@ -85,13 +87,13 @@ class StateMachineExecutor {
                 if(stateInfo.Type !== 'Fail') {
                     // state types Parallel, Pass, and Task can generate a result and can include ResultPath
                     if([stateTypes.PARALLEL, stateTypes.PASS, stateTypes.TASK].indexOf(stateInfo.Type) > -1) {
-                        input = this.processTaskResultPath(input, stateInfo, (outputData || {}));
+                        globalInput = this.processTaskResultPath(globalInput, stateInfo, (outputData || {}));
                     }
 
                     // NOTE:
                     // State machine data is represented by JSON text, so you can provide values using any data type supported by JSON
                     // https://docs.aws.amazon.com/step-functions/latest/dg/concepts-state-machine-data.html
-                    output = this.processTaskOutputPath(input, stateInfo.OutputPath);
+                    output = this.processTaskOutputPath(globalInput, stateInfo.OutputPath);
                 }
                 // kick out if it is the last one (end => true) or state is 'Success' or 'Fail
                 if (stateInfo.Type === 'Succeed' || stateInfo.Type === 'Fail' || stateInfo.End === true) {
