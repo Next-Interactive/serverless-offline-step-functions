@@ -269,6 +269,10 @@ class StateMachineExecutor {
             return resultData
         }
 
+        if (stateInfo.ResultPath === null) {
+            return input
+        }
+
         const resultPathArray = jsonPath.toPathArray(stateInfo.ResultPath)
         if (resultPathArray[0] === '$' && resultPathArray.length > 1) {resultPathArray.shift();}
 
