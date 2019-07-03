@@ -18,8 +18,6 @@ class StateMachineExecutor {
         this.stateMachineJSON = {};
         this.provider = provider;
 
-        console.log('-----------------------PROVIDER-----------------------')
-        console.log(this.provider)
         if (stateMachineJSONInput) {
             this.stateMachineJSON.stateMachines = _.assign({}, this.stateMachineJSON.stateMachines, stateMachineJSONInput);
         } else if (fs.existsSync('./state-machine.json')) {
@@ -238,16 +236,13 @@ class StateMachineExecutor {
 
     handleParameters(input, params) {
         let returnParam = {}
-        console.log(params)
         Object.keys(params).forEach((key) => {
             if (key.endsWith('.$')) {
                 returnParam[key.substr(0, key.length - 2)] = jsonPath({ json: input, path: params[key]})[0]
+            } else if (typeof params[key] === 'object') {
+                returnParam[key] = this.handleParameters(input, params[key])
             } else {
-                if (typeof params[key] === 'object') {
-                    returnParam[key] = this.handleParameters(input, params[key])
-                } else {
-                    returnParam[key] = params[key]
-                }
+                returnParam[key] = params[key]
             }
         })
 
