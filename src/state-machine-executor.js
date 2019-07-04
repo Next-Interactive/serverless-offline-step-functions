@@ -7,7 +7,7 @@ const choiceProcessor = require('./choice-processor');
 const stateTypes = require('./state-types');
 const StateRunTimeError = require('./state-machine-error');
 const createLambdaContext = require('../node_modules/serverless-offline/src/createLambdaContext');
-var objectPath = require("object-path");
+const objectPath = require("object-path");
 
 const logPrefix = '[Serverless Offline Step Functions]:';
 
@@ -214,7 +214,13 @@ class StateMachineExecutor {
         } else {
             input = input ? input : {};
             jsonPath({ json: input, path: stateInfo.InputPath, callback: (data) => {
-                input = Object.assign({}, data);
+                if (Array.isArray(data)) {
+                    input = [...data]
+                } else if (typeof data === 'object') {
+                    input = Object.assign({}, data)
+                } else {
+                    input = data
+                }
             }});
         }
 
