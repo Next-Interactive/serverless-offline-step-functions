@@ -8,6 +8,7 @@ const stateTypes = require('./state-types');
 const StateRunTimeError = require('./state-machine-error');
 const createLambdaContext = require('../node_modules/serverless-offline/src/createLambdaContext');
 const objectPath = require("object-path");
+const clonedeep = require('lodash.clonedeep')
 
 const logPrefix = '[Serverless Offline Step Functions]:';
 
@@ -155,7 +156,7 @@ class StateMachineExecutor {
             // should pass input directly to output without doing work
             case 'Pass':
                 if (stateInfo.Result !== undefined) {
-                    return `console.log(JSON.stringify({ "${outputKey}": ${JSON.stringify(stateInfo.Result)} || {} })); process.exit(0);`;
+                    return `console.log(JSON.stringify({ "${outputKey}": ${JSON.stringify(clonedeep(stateInfo.Result))} || {} })); process.exit(0);`;
                 }
 
                 return '';
@@ -214,13 +215,7 @@ class StateMachineExecutor {
         } else {
             input = input ? input : {};
             jsonPath({ json: input, path: stateInfo.InputPath, callback: (data) => {
-                if (Array.isArray(data)) {
-                    input = [...data]
-                } else if (typeof data === 'object') {
-                    input = Object.assign({}, data)
-                } else {
-                    input = data
-                }
+                input = clonedeep(data)
             }});
         }
 
