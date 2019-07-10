@@ -7,6 +7,8 @@ const choiceProcessor = require('./choice-processor');
 const stateTypes = require('./state-types');
 const StateRunTimeError = require('./state-machine-error');
 const createLambdaContext = require('../node_modules/serverless-offline/src/createLambdaContext');
+const objectPath = require("object-path");
+const clonedeep = require('lodash.clonedeep')
 
 const logPrefix = '[Serverless Offline Step Functions]:';
 
@@ -35,12 +37,15 @@ class StateMachineExecutor {
      */
     spawnProcess(stateInfo, input, context, callback = null) {
         console.log(`* * * * * ${this.currentStateName} * * * * *`);
-        console.log('input: ', input);
+        let globalInput = input
+
         // This will be used as the parent node key for when the process
         // finishes and its output needs to be processed.
         const outputKey = `sf-${Date.now()}`;
 
-        this.processTaskInputPath(input, stateInfo);
+        input = this.processTaskInputPath(input, stateInfo);
+        input = this.processTaskParameters(input, stateInfo);
+        console.log('input: ', input);
 
         const child = child_process.spawn('node',
         [
@@ -82,13 +87,13 @@ class StateMachineExecutor {
                 if(stateInfo.Type !== 'Fail') {
                     // state types Parallel, Pass, and Task can generate a result and can include ResultPath
                     if([stateTypes.PARALLEL, stateTypes.PASS, stateTypes.TASK].indexOf(stateInfo.Type) > -1) {
-                        input = this.processTaskResultPath(input, stateInfo, (outputData || {}));
+                        globalInput = this.processTaskResultPath(globalInput, stateInfo, (outputData || {}));
                     }
 
                     // NOTE:
                     // State machine data is represented by JSON text, so you can provide values using any data type supported by JSON
                     // https://docs.aws.amazon.com/step-functions/latest/dg/concepts-state-machine-data.html
-                    output = this.processTaskOutputPath(input, stateInfo.OutputPath);
+                    output = this.processTaskOutputPath(globalInput, stateInfo.OutputPath);
                 }
                 // kick out if it is the last one (end => true) or state is 'Success' or 'Fail
                 if (stateInfo.Type === 'Succeed' || stateInfo.Type === 'Fail' || stateInfo.End === true) {
@@ -150,6 +155,10 @@ class StateMachineExecutor {
 
             // should pass input directly to output without doing work
             case 'Pass':
+                if (stateInfo.Result !== undefined) {
+                    return `console.log(JSON.stringify({ "${outputKey}": ${JSON.stringify(clonedeep(stateInfo.Result))} || {} })); process.exit(0);`;
+                }
+
                 return '';
             // Waits before moving on:
             // - Seconds, SecondsPath: wait the given number of seconds
@@ -206,10 +215,41 @@ class StateMachineExecutor {
         } else {
             input = input ? input : {};
             jsonPath({ json: input, path: stateInfo.InputPath, callback: (data) => {
-                input = Object.assign({}, data);
+                input = clonedeep(data)
             }});
         }
+
+        return input
     }
+
+    /**
+     * Process the state's Parameters - per AWS docs:
+     * https://docs.aws.amazon.com/step-functions/latest/dg/input-output-inputpath-params.html
+     * @param {*} input
+     * @param {*} stateInfo
+     */
+    processTaskParameters(input, stateInfo) {
+        if (typeof stateInfo.Parameters === 'undefined') {
+            return input
+        }
+
+         return this.handleParameters(input, stateInfo.Parameters)
+    }
+
+     handleParameters(input, params) {
+        let returnParam = {}
+        Object.keys(params).forEach((key) => {
+            if (key.endsWith('.$')) {
+                returnParam[key.substr(0, key.length - 2)] = jsonPath({ json: input, path: params[key]})[0]
+            } else if (typeof params[key] === 'object') {
+                returnParam[key] = this.handleParameters(input, params[key])
+            } else {
+                returnParam[key] = params[key]
+            }
+        })
+
+         return returnParam
+    }	    
 
     /**
      * Moves the result of the task to the path specified by ResultPath in
@@ -227,16 +267,20 @@ class StateMachineExecutor {
         // If omitted, it has the value $ which designates the entire input.
         // For more information, see Input and Output Processing.
         // https://docs.aws.amazon.com/step-functions/latest/dg/amazon-states-language-common-fields.html
-        const path = typeof stateInfo.ResultPath === 'undefined' ? '$' : stateInfo.ResultPath;
-        const processed = jsonPath({ json: resultData, path: path });
-
-        if (typeof processed === 'undefined' || processed.length === 0) {
-            return this.endStateMachine(
-                new StateRunTimeError(`An error occurred while executing the state '${this.currentStateName}'. Invalid ResultPath '${path}': The ResultPath references an invalid value.`),
-                resultData);
+        if (typeof stateInfo.ResultPath === 'undefined' || stateInfo.ResultPath === '$') {            
+            return resultData
         }
 
-        return processed[0];
+        if (stateInfo.ResultPath === null) {
+            return input
+        }
+
+        const resultPathArray = jsonPath.toPathArray(stateInfo.ResultPath)
+        if (resultPathArray[0] === '$' && resultPathArray.length > 1) {resultPathArray.shift();}
+
+        objectPath.set(input, resultPathArray, resultData)
+
+        return input
     }
 
     /**
