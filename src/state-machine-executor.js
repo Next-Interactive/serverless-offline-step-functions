@@ -5,7 +5,9 @@ const jsonPath = require('JSONPath');
 const choiceProcessor = require('./choice-processor');
 const stateTypes = require('./state-types');
 const StateRunTimeError = require('./state-machine-error');
-var objectPath = require("object-path");
+const createLambdaContext = require('../node_modules/serverless-offline/src/createLambdaContext');
+const objectPath = require("object-path");
+const clonedeep = require('lodash.clonedeep')
 
 const logPrefix = '[Serverless Offline Step Functions]:';
 
@@ -41,7 +43,6 @@ class StateMachineExecutor {
         // This will be used as the parent node key for when the process
         // finishes and its output needs to be processed.
         const outputKey = `sf-${Date.now()}`;
-        
         input = this.processTaskInputPath(input, stateInfo);
         input = this.processTaskParameters(input, stateInfo);
         console.log('input: ', input);
@@ -154,10 +155,10 @@ class StateMachineExecutor {
             // should pass input directly to output without doing work
             case 'Pass':
                 if (stateInfo.Result !== undefined) {
-                    return `console.log(JSON.stringify({ "${outputKey}": ${JSON.stringify(stateInfo.Result)} || {} })); process.exit(0);`;
+                    return `console.log(JSON.stringify({ "${outputKey}": ${JSON.stringify(clonedeep(stateInfo.Result))} || {} })); process.exit(0);`;
                 }
 
-                return ''
+                return '';
             // Waits before moving on:
             // - Seconds, SecondsPath: wait the given number of seconds
             // - Timestamp, TimestampPath: wait until the given timestamp
@@ -213,7 +214,7 @@ class StateMachineExecutor {
         } else {
             input = input ? input : {};
             jsonPath({ json: input, path: stateInfo.InputPath, callback: (data) => {
-                input = Object.assign({}, data);
+                input = clonedeep(data)
             }});
         }
 
@@ -246,8 +247,8 @@ class StateMachineExecutor {
             }
         })
 
-        return returnParam
-    }
+         return returnParam
+    }	    
 
     /**
      * Moves the result of the task to the path specified by ResultPath in
@@ -265,7 +266,7 @@ class StateMachineExecutor {
         // If omitted, it has the value $ which designates the entire input.
         // For more information, see Input and Output Processing.
         // https://docs.aws.amazon.com/step-functions/latest/dg/amazon-states-language-common-fields.html
-        if (typeof stateInfo.ResultPath === 'undefined' || stateInfo.ResultPath === '$') {
+        if (typeof stateInfo.ResultPath === 'undefined' || stateInfo.ResultPath === '$') {            
             return resultData
         }
 
