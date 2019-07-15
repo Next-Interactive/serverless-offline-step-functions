@@ -1,11 +1,11 @@
-const child_process = require('child_process');
 const _ = require('lodash');
 const fs = require('fs');
 const jsonPath = require('JSONPath');
 const choiceProcessor = require('./choice-processor');
 const stateTypes = require('./state-types');
 const StateRunTimeError = require('./state-machine-error');
-const createLambdaContext = require('../node_modules/serverless-offline/src/createLambdaContext');
+const objectPath = require("object-path");
+const lambdaContext = require(process.cwd() + '/node_modules/serverless-offline/src/createLambdaContext')
 const objectPath = require("object-path");
 const clonedeep = require('lodash.clonedeep')
 
@@ -36,57 +36,22 @@ class StateMachineExecutor {
      * @param {*} input
      * @param {*} context
      */
-    spawnProcess(stateInfo, input, context, callback = null) {
+    spawnProcess(stateInfo, input, context, callback = null, retryNumber = 0) {
         console.log(`* * * * * ${this.currentStateName} * * * * *`);
         let globalInput = input
 
-        // This will be used as the parent node key for when the process
-        // finishes and its output needs to be processed.
-        const outputKey = `sf-${Date.now()}`;
         input = this.processTaskInputPath(input, stateInfo);
         input = this.processTaskParameters(input, stateInfo);
         console.log('input: ', input);
 
-        const child = child_process.spawn('node',
-        [
-            '-e',
-            this.whatToRun(stateInfo, input, outputKey, callback)],
-            { stdio: 'pipe',
-            env: Object.assign({}, process.env, {
-                input: JSON.stringify(input),
-            })});
-
-            let outputData = null;
-            child.stdout.on('data', (data) => {
-                if (Buffer.isBuffer(data) &&
-                stateInfo.Type !== stateTypes.FAIL) {
-                    data = data.toString().trim();
-                    try {
-                        // check that output is a JSON string
-                        const parsed = JSON.parse(data);
-                        // only process data if sent as step functions output so data from
-                        // other console.logs don't get processed
-                        if (typeof parsed[outputKey] !== 'undefined') {
-                            outputData = parsed[outputKey];
-                        }
-                    } catch(error) {
-                        console.log(`${logPrefix} error processing data: ${data}`);
-                    }
-                }
-            });
-
-
-            child.stderr.on('data', (data) => {
-                console.error(`${logPrefix} stderr:`, data.toString())
-            });
-
-            child.on('exit', () => {
+        this.whatToRun(stateInfo, input, callback)
+            .then((data) => {
                 let output = null;
                 // any state except the fail state may have OutputPath
                 if(stateInfo.Type !== 'Fail') {
                     // state types Parallel, Pass, and Task can generate a result and can include ResultPath
                     if([stateTypes.PARALLEL, stateTypes.PASS, stateTypes.TASK].indexOf(stateInfo.Type) > -1) {
-                        globalInput = this.processTaskResultPath(globalInput, stateInfo, (outputData || {}));
+                        globalInput = this.processTaskResultPath(globalInput, stateInfo.ResultPath, (data || {}));
                     }
 
                     // NOTE:
@@ -99,14 +64,38 @@ class StateMachineExecutor {
                     return this.endStateMachine(null, null, output);
                 }
 
-                // const newEvent = event ? Object.assign({}, event) : {};
-                // newEvent.input = event.output;
-                // newEvent.stateName = stateInfo.Next;
-                this.currentStateName = stateInfo.Next;
-                stateInfo = this.stateMachineJSON.stateMachines[this.stateMachineName].definition.States[stateInfo.Next];
-                console.log('output: ', output);
-                this.spawnProcess(stateInfo, output, context, callback);
-            });
+                this.goToNextStep(stateInfo.Next, output, context, callback)
+            })
+            .catch((error) => {
+                if (stateInfo.Retry !== undefined) {
+                    retryNumber++
+                    const maxAttempts = (stateInfo.Retry[0].MaxAttempts !== undefined ? stateInfo.Retry[0].MaxAttempts : 3)
+                    
+                    if (retryNumber <= maxAttempts) {
+                        console.log('Retry', retryNumber)
+                        this.spawnProcess(stateInfo, globalInput, context, callback, retryNumber);
+
+                        return
+                    }
+                }
+
+                if (stateInfo.Catch !== undefined) {
+                    console.log('Catch')
+                    globalInput = this.processTaskResultPath(globalInput, stateInfo.Catch[0].ResultPath, (error || {}));
+                    this.goToNextStep(stateInfo.Catch[0].Next, globalInput, context, callback)
+
+                    return
+                }
+
+                this.endStateMachine(error, null, globalInput) 
+            })
+    }
+
+    goToNextStep(next, output, context, callback) {
+        this.currentStateName = next;
+        const nextStateInfo = this.stateMachineJSON.stateMachines[this.stateMachineName].definition.States[next];
+        console.log('output: ', output);
+        this.spawnProcess(nextStateInfo, output, context, callback);
     }
 
     endStateMachine(error, input, output, message) {
@@ -132,52 +121,54 @@ class StateMachineExecutor {
      * decides what to run based on state type
      * @param {object} stateInfo
      */
-    whatToRun(stateInfo, input, outputKey, callback) {
-        switch(stateInfo.Type) {
-            case 'Task':
-                // TODO: catch, retry
-                // This will spin up a node child process to fire off the handler function of the given lambda
-                // the output of the lambda is placed into a JSON object with the outputKey generated above as
-                // the parent node and piped to stdout for processing. This is done so other console.logs are not
-                // processed by this plugin.
-                // process.exit(0) must be called in .then because a child process will not exit if it has connected
-                // to another resource, such as a database or redis, which may be a source of future events.
-                const handlerSplit = stateInfo.handler.split('.');
-                // const cb = callback(null, { statusCode: 200, body: JSON.stringify({ startDate: sme.startDate, executionArn: sme.executionArn }) });
-                // const context = ;
+    whatToRun(stateInfo, input, callback) {
+        return new Promise((resolve, reject) => {
+            switch(stateInfo.Type) {
+                case 'Task':
+                    if (stateInfo.environment !== undefined) {
+                        Object.keys(stateInfo.environment).forEach(function(key){
+                            process.env[key] = stateInfo.environment[key]
+                        });
+                    }
 
-                let runner = `const context = require('./node_modules/serverless-offline/src/createLambdaContext')(require('./.build/${handlerSplit[0]}').${handlerSplit[1]}, ${JSON.stringify(this.provider)},${callback}); `;
-                runner += `require("./.build/${handlerSplit[0]}").${handlerSplit[1]}(JSON.parse(process.env.input), context, ${callback})`;
-                runner += `.then((data) => { console.log(JSON.stringify({ "${outputKey}": data || {} })); process.exit(0); })`;
-                runner += `.catch((e) => { console.error("${logPrefix} handler error:",e); })`;
-                return runner;
-
-            // should pass input directly to output without doing work
-            case 'Pass':
-                if (stateInfo.Result !== undefined) {
-                    return `console.log(JSON.stringify({ "${outputKey}": ${JSON.stringify(clonedeep(stateInfo.Result))} || {} })); process.exit(0);`;
-                }
-
-                return '';
-            // Waits before moving on:
-            // - Seconds, SecondsPath: wait the given number of seconds
-            // - Timestamp, TimestampPath: wait until the given timestamp
-            case 'Wait':
-                return this.buildWaitState(stateInfo, input);
-            // ends the state machine execution with 'success' status
-            case 'Succeed':
-            // ends the state machine execution with 'fail' status
-            case 'Fail':
-                return this.endStateMachine(null, stateInfo);
-            // adds branching logic to the state machine
-            case 'Choice':
-                stateInfo.Next = choiceProcessor.processChoice(stateInfo, input);
-                return '';
-            case 'Parallel':
-                return `console.error('${logPrefix} 'Parallel' state type is not yet supported by serverless offline step functions')`;
-            default:
-                return `console.error('${logPrefix} Invalid state type: ${stateInfo.Type}')`
-        }
+                    const handlerSplit = stateInfo.handler.split('.');
+                    const context = lambdaContext(require(process.cwd() + '/.build/' + handlerSplit[0])[handlerSplit[1]], JSON.stringify(this.provider), callback)
+                    const currentLambda = require(process.cwd() + '/.build/' + handlerSplit[0])[handlerSplit[1]](input, context, callback)
+                    
+                    return currentLambda
+                        .then((data) => { return resolve(data)})
+                        .catch((error) => {
+                            return reject(error)
+                        })
+                // should pass input directly to output without doing work
+                case 'Pass':
+                    if (stateInfo.Result !== undefined) {
+                        return resolve(clonedeep(stateInfo.Result))
+                    }
+    
+                    return resolve()
+                // Waits before moving on:
+                // - Seconds, SecondsPath: wait the given number of seconds
+                // - Timestamp, TimestampPath: wait until the given timestamp
+                case 'Wait':
+                    setTimeout(() => {
+                        return resolve()
+                    }, this.buildWaitStateTmp(stateInfo, input))
+                // ends the state machine execution with 'success' status
+                case 'Succeed':
+                // ends the state machine execution with 'fail' status
+                case 'Fail':
+                    return resolve(this.endStateMachine(null, stateInfo));
+                // adds branching logic to the state machine
+                case 'Choice':
+                    stateInfo.Next = choiceProcessor.processChoice(stateInfo, input);
+                    return resolve();
+                case 'Parallel':
+                    return `console.error('${logPrefix} 'Parallel' state type is not yet supported by serverless offline step functions')`;
+                default:
+                    return `console.error('${logPrefix} Invalid state type: ${stateInfo.Type}')`
+            }
+        })
     }
 
     buildWaitState(stateInfo, event) {
@@ -194,7 +185,7 @@ class StateMachineExecutor {
                 new StateRunTimeError('Specified wait time is not a number'), stateInfo);
         }
 
-        return `setTimeout(() => {}, ${+milliseconds*1000});`;
+        return milliseconds*1000
     }
 
     /**
@@ -247,8 +238,8 @@ class StateMachineExecutor {
             }
         })
 
-         return returnParam
-    }	    
+        return returnParam
+    }
 
     /**
      * Moves the result of the task to the path specified by ResultPath in
@@ -259,25 +250,23 @@ class StateMachineExecutor {
      * @param {*} stateInfo
      * @param {string} resultData
      */
-    processTaskResultPath(input, stateInfo, resultData) {
+    processTaskResultPath(input, resultPath, resultData) {
         // according to AWS docs:
         // ResultPath (Optional)
         // A path that selects a portion of the state's input to be passed to the state's output.
         // If omitted, it has the value $ which designates the entire input.
         // For more information, see Input and Output Processing.
         // https://docs.aws.amazon.com/step-functions/latest/dg/amazon-states-language-common-fields.html
-        if (typeof stateInfo.ResultPath === 'undefined' || stateInfo.ResultPath === '$') {            
+        if (typeof resultPath === 'undefined' || resultPath === '$') {
             return resultData
         }
 
-        if (stateInfo.ResultPath === null) {
-            return input
+        if (resultPath !== null) {
+            const resultPathArray = jsonPath.toPathArray(resultPath)
+            if (resultPathArray[0] === '$' && resultPathArray.length > 1) {resultPathArray.shift();}
+
+            objectPath.set(input, resultPathArray, resultData)
         }
-
-        const resultPathArray = jsonPath.toPathArray(stateInfo.ResultPath)
-        if (resultPathArray[0] === '$' && resultPathArray.length > 1) {resultPathArray.shift();}
-
-        objectPath.set(input, resultPathArray, resultData)
 
         return input
     }

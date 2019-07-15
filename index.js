@@ -65,9 +65,9 @@ class ServerlessPlugin {
                 }
 
                 const lambdaFn = this.service.getFunction(lambdaName);
-                const lamdaOpts = functionHelper.getFunctionOptions(lambdaFn, lambdaName, servicePath);
 
                 state.handler = functions[lambdaName].handler;
+                state.environment = functions[lambdaName].environment;
                 if (stateName === stateMachine.definition.StartAt) {
                     // // create a new function for an endpoint and
                     // // give it a unique name
