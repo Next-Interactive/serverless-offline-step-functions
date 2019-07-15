@@ -6,7 +6,6 @@ const stateTypes = require('./state-types');
 const StateRunTimeError = require('./state-machine-error');
 const objectPath = require("object-path");
 const lambdaContext = require(process.cwd() + '/node_modules/serverless-offline/src/createLambdaContext')
-const objectPath = require("object-path");
 const clonedeep = require('lodash.clonedeep')
 
 const logPrefix = '[Serverless Offline Step Functions]:';
