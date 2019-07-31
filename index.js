@@ -43,6 +43,7 @@ class ServerlessPlugin {
     // object key in the service's custom data for config values
     const SERVERLESS_OFFLINE_STEP_FUNCTIONS = 'serverless-offline-step-functions';
     const functions = this.serverless.service.functions;
+    
     _.forEach(this.serverless.service.stepFunctions.stateMachines, (stateMachine, stateMachineName) => {
         _.forEach(stateMachine.definition.States, (state, stateName) => {
             if (state.Type === stateTypes.TASK) {
@@ -64,9 +65,9 @@ class ServerlessPlugin {
                 }
 
                 const lambdaFn = this.service.getFunction(lambdaName);
-                const lamdaOpts = functionHelper.getFunctionOptions(lambdaFn, lambdaName, servicePath);
 
                 state.handler = functions[lambdaName].handler;
+                state.environment = functions[lambdaName].environment;
                 if (stateName === stateMachine.definition.StartAt) {
                     // // create a new function for an endpoint and
                     // // give it a unique name
