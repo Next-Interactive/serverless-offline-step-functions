@@ -47,7 +47,6 @@ class ServerlessPlugin {
     _.forEach(this.serverless.service.stepFunctions.stateMachines, (stateMachine, stateMachineName) => {
         _.forEach(stateMachine.definition.States, (state, stateName) => {
             if (state.Type === stateTypes.TASK) {
-                const servicePath = this.serverless.config.servicePath;
                 let lambdaName = this.serverless.providers.aws.naming.extractLambdaNameFromArn(state.Resource);
 
                 // store the lambda function handler in the state for reference in the JSON file
@@ -64,11 +63,10 @@ class ServerlessPlugin {
                     throw new Error(`Lambda function not found: ${lambdaName}`);
                 }
 
-                const lambdaFn = this.service.getFunction(lambdaName);
-
                 state.handler = functions[lambdaName].handler;
                 state.environment = functions[lambdaName].environment;
                 if (stateName === stateMachine.definition.StartAt) {
+                    const lambdaFn = this.service.getFunction(lambdaName);
                     // // create a new function for an endpoint and
                     // // give it a unique name
                     // const lambdaFn = {};
