@@ -2,6 +2,7 @@ const _ = require('lodash');
 const fs = require('fs');
 const jsonPath = require('JSONPath');
 const choiceProcessor = require('./choice-processor');
+const AWSServicesProcessor = require('./aws-services-processor');
 const stateTypes = require('./state-types');
 const StateRunTimeError = require('./state-machine-error');
 const objectPath = require("object-path");
@@ -11,7 +12,8 @@ const clonedeep = require('lodash.clonedeep')
 const logPrefix = '[Serverless Offline Step Functions]:';
 
 class StateMachineExecutor {
-    constructor(stateMachineName, stateName, stateMachineJSONInput, provider) {
+    constructor(awsServices, stateMachineName, stateName, stateMachineJSONInput, provider) {
+        this.awsServices = awsServices;
         this.currentStateName = stateName;
         this.stateMachineName = stateMachineName;
         this.stateMachineJSON = {};
@@ -77,16 +79,25 @@ class StateMachineExecutor {
                         return
                     }
                 }
+                
+                const errorJSON = {
+                    'Error': error.name,
+                    'Cause': {
+                        "errorType": error.name,
+                        "errorMessage": error.message,
+                        "trace": error.stack
+                    }
+                }
 
                 if (stateInfo.Catch !== undefined) {
                     console.log('Catch')
-                    globalInput = this.processTaskResultPath(globalInput, stateInfo.Catch[0].ResultPath, (error || {}));
+                    globalInput = this.processTaskResultPath(globalInput, stateInfo.Catch[0].ResultPath, (errorJSON || {}));
                     this.goToNextStep(stateInfo.Catch[0].Next, globalInput, context, callback)
 
                     return
                 }
 
-                this.endStateMachine(error, null, globalInput) 
+                this.endStateMachine(errorJSON, null, globalInput) 
             })
     }
 
@@ -124,6 +135,10 @@ class StateMachineExecutor {
         return new Promise((resolve, reject) => {
             switch(stateInfo.Type) {
                 case 'Task':
+                    if (this.awsServices.includes(stateInfo.Resource)) {
+                        return AWSServicesProcessor.processAWSServices(stateInfo, input)
+                    }
+                    
                     if (stateInfo.environment !== undefined) {
                         Object.keys(stateInfo.environment).forEach(function(key){
                             process.env[key] = stateInfo.environment[key]
@@ -169,7 +184,7 @@ class StateMachineExecutor {
             }
         })
     }
-
+    
     buildWaitState(stateInfo, event) {
         let milliseconds = 0;
         // SecondsPath: specified using a path from the state's input data.
