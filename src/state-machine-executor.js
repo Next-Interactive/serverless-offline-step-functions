@@ -136,7 +136,7 @@ class StateMachineExecutor {
             switch(stateInfo.Type) {
                 case 'Task':
                     if (this.awsServices.includes(stateInfo.Resource)) {
-                        return AWSServicesProcessor.processAWSServices(stateInfo, input)
+                        return resolve(AWSServicesProcessor.processAWSServices(stateInfo, input))
                     }
                     
                     if (stateInfo.environment !== undefined) {

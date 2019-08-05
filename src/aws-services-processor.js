@@ -11,8 +11,8 @@ class AWSServicesProcessor {
         switch(stateInfo.Resource) {
             case 'arn:aws:states:::sqs:sendMessage':
                 return this.sendMessage(stateInfo, input)
-            }
         }
+    }
         
     async sendMessage(stateInfo, input) {
         const sqs = new AWS.SQS({
@@ -40,7 +40,7 @@ class AWSServicesProcessor {
             params.MessageAttributes = input.MessageAttributes
         }
 
-        // await sqs.sendMessage(params).promise()
+        return await sqs.sendMessage(params).promise()
     }
 }
 
