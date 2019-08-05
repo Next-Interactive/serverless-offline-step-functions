@@ -26,6 +26,16 @@ custom:
     resourcePrefix: ${self:service}-${self:provider.stage}-
 ```
 
+- To override AWS Crédentials and Endpoint
+```
+custom:
+  serverless-offline-step-functions:
+    accessKeyId: 'your-access-key-id'
+    secretAccessKey: 'your-secret-access-key'
+    sqs:
+      endpoint: 'your-endpoint'
+```
+
 ## Server
 The plugin also sets up a server to run any lambdas that make use of the StepFunctions API in the `aws-sdk`. The default port is `8014`; however, you can specify which port to listen to like so:
 ```

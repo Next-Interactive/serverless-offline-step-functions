@@ -12,7 +12,8 @@ const clonedeep = require('lodash.clonedeep')
 const logPrefix = '[Serverless Offline Step Functions]:';
 
 class StateMachineExecutor {
-    constructor(awsServices, stateMachineName, stateName, stateMachineJSONInput, provider) {
+    constructor(config, awsServices, stateMachineName, stateName, stateMachineJSONInput, provider) {
+        this.awsServicesProcessor = new AWSServicesProcessor(config)
         this.awsServices = awsServices;
         this.currentStateName = stateName;
         this.stateMachineName = stateMachineName;
@@ -136,7 +137,7 @@ class StateMachineExecutor {
             switch(stateInfo.Type) {
                 case 'Task':
                     if (this.awsServices.includes(stateInfo.Resource)) {
-                        return resolve(AWSServicesProcessor.processAWSServices(stateInfo, input))
+                        return resolve(this.awsServicesProcessor.processAWSServices(stateInfo, input))
                     }
                     
                     if (stateInfo.environment !== undefined) {

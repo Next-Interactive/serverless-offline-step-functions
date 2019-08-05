@@ -1,27 +1,43 @@
 const _ = require('lodash');
 const AWS = require('aws-sdk');
-
-// const StateMachineError = require('./state-machine-error');
+const StateMachineError = require('./state-machine-error');
 
 // The following aws services:
 // - arn:aws:states:::sqs:sendMessage
 
 class AWSServicesProcessor {
+    constructor(config) {
+        this.config = config
+
+        const options = {
+            credentials: (this.config.accessKeyId && this.config.secretAccessKey) ? {accessKeyId: this.config.accessKeyId, secretAccessKey: this.config.secretAccessKey} : undefined,
+            region: this.config.region ? this.config.region : 'eu-west-1'
+        }
+
+        AWS.config.update(options)
+    }
+
     processAWSServices(stateInfo, input) {
         switch(stateInfo.Resource) {
             case 'arn:aws:states:::sqs:sendMessage':
-                return this.sendMessage(stateInfo, input)
+                return this.sqsSendMessage(stateInfo, input)
+            default:
+                throw new StateMachineError('This AWS Service isn\'t implemented');
         }
     }
         
-    async sendMessage(stateInfo, input) {
-        const sqs = new AWS.SQS({
-            'region': 'eu-west-1'
-        })
-        
+    async sqsSendMessage(stateInfo, input) {
+        const sqs = new AWS.SQS()
+        let queueUrl = input.QueueUrl
+
+        if (this.config.sqs && this.config.sqs.endpoint) {
+            const queueInfo = queueUrl.split('/')
+            queueUrl = this.config.sqs.endpoint + queueInfo[queueInfo.length - 1]
+        }
+
         let params = {
             MessageBody: JSON.stringify(input.MessageBody),
-            QueueUrl: input.QueueUrl
+            QueueUrl: queueUrl
         };
 
         if (input.DelaySeconds !== undefined) {
@@ -44,4 +60,4 @@ class AWSServicesProcessor {
     }
 }
 
-module.exports = new AWSServicesProcessor();
+module.exports = AWSServicesProcessor;
