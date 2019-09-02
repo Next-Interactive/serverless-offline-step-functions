@@ -14,9 +14,9 @@ class ServerlessPlugin {
     this.options = options;
     this.logPrefix = '[Offline Step Functions] ';
     this.handlersDirectory = `./node_modules/serverless-offline-step-functions/src`;
-
+    this.awsServices = ['arn:aws:states:::sqs:sendMessage']
     this.hooks = {
-        'before:offline:start:init': () => require('./src/step-functions-api-simulator.js')(this.serverless),
+        'before:offline:start:init': () => require('./src/step-functions-api-simulator.js')(this.serverless, this.awsServices),
         'offline:start:init': () =>
             Promise.bind(this)
             .then(this.parseYaml)
@@ -46,8 +46,7 @@ class ServerlessPlugin {
     
     _.forEach(this.serverless.service.stepFunctions.stateMachines, (stateMachine, stateMachineName) => {
         _.forEach(stateMachine.definition.States, (state, stateName) => {
-            if (state.Type === stateTypes.TASK) {
-                const servicePath = this.serverless.config.servicePath;
+            if (state.Type === stateTypes.TASK && !this.awsServices.includes(state.Resource)) {
                 let lambdaName = this.serverless.providers.aws.naming.extractLambdaNameFromArn(state.Resource);
 
                 // store the lambda function handler in the state for reference in the JSON file
@@ -64,11 +63,11 @@ class ServerlessPlugin {
                     throw new Error(`Lambda function not found: ${lambdaName}`);
                 }
 
-                const lambdaFn = this.service.getFunction(lambdaName);
-
                 state.handler = functions[lambdaName].handler;
                 state.environment = functions[lambdaName].environment;
+                
                 if (stateName === stateMachine.definition.StartAt) {
+                    const lambdaFn = this.service.getFunction(lambdaName);
                     // // create a new function for an endpoint and
                     // // give it a unique name
                     // const lambdaFn = {};

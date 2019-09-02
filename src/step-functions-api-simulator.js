@@ -5,8 +5,9 @@ const _ = require('lodash');
 const StateMachineExecutor = require('./state-machine-executor');
 const callback = require('./callback')
 
-module.exports = (serverless) => {
-    const port = serverless.service.custom['serverless-offline-step-functions'].port || 8014;
+module.exports = (serverless, awsServices) => {
+    const config = serverless.service.custom['serverless-offline-step-functions'];
+    const port = config.port || 8014;
 
     const logPrefix = chalk.magenta('[Step Functions API Simulator]');
 
@@ -30,7 +31,7 @@ module.exports = (serverless) => {
 
                 if (machine.name === machineName) {
                     const currentState = machine.definition.States[machine.definition.StartAt];
-                    const sme = new StateMachineExecutor(machineKey, machine.definition.StartAt, { [machineKey]: machine }, serverless.service.provider);
+                    const sme = new StateMachineExecutor(config, awsServices, machineKey, machine.definition.StartAt, { [machineKey]: machine }, serverless.service.provider);
 
                     // TODO: check integration type to set input properly (i.e. lambda vs. sns)
                     sme.spawnProcess(currentState, JSON.parse(data.input), {}, callback);
